@@ -12,6 +12,7 @@ Flask API
 
 The agent reads a label image and returns structured JSON output containing the detected net weight, confidence score, and status.
 
+<<<<<<< HEAD
 ## Setup
 ```bash
 python3 -m venv .venv
@@ -65,6 +66,52 @@ Add your Gemini API key inside the file:
 GOOGLE_API_KEY=your_api_key_here
 
 You can generate an API key from:
+=======
+Architecture Overview
+
+Image Input (Local Path / Upload)
+↓
+Flask API
+↓
+ADK Agent
+↓
+Gemini Vision Model
+↓
+Confidence Guardrail
+↓
+JSON Output
+
+Features
+Extract net weight from label images
+Supports multiple image formats
+Returns structured JSON output
+Confidence validation to avoid incorrect readings
+Flags low-confidence results for manual review
+Handles foggy or blurred labels
+Simple API for automation workflows
+
+
+Setup Instructions
+1. Clone the repository
+git clone https://github.com/GSruthi1/ADK-Weight-Extractor.git
+cd ADK-Weight-Extractor
+2. Create virtual environment
+python3 -m venv .venv
+source .venv/bin/activate
+3. Install dependencies
+pip install -r requirements.txt
+Configure Gemini API Key
+
+Create a .env file in the project root.
+
+touch .env
+
+Add the following line inside the file:
+
+GOOGLE_API_KEY=your_api_key_here
+
+You can generate an API key here:
+
 
 https://aistudio.google.com/app/apikey
 
@@ -73,6 +120,7 @@ Run the API
 Start the Flask server:
 
 python app.py
+
 
 The service will start at:
 
@@ -84,6 +132,16 @@ curl -X POST http://127.0.0.1:5000/extract-weight \
 -d '{
 "image_path": "sample_images/Box_1.jpg"
 }'
+=======
+The API will run at:
+
+http://127.0.0.1:5000
+Test the API
+Test using image path
+curl -X POST http://127.0.0.1:5000/extract-weight \
+-H "Content-Type: application/json" \
+-d '{"image_path": "sample_images/Box_1.jpg"}'
+
 
 Example response:
 
@@ -93,12 +151,19 @@ Example response:
 "reason": "Found NET WT on label",
 "status": "accepted"
 }
+
 Option 2 — Upload an image file
+=======
+Test using file upload
+
 curl -X POST http://127.0.0.1:5000/extract-weight \
 -F "file=@sample_images/Box_1.jpg"
 Confidence Guardrail
 
 The system applies a confidence validation step to reduce incorrect extractions.
+=======
+The system applies a validation step to reduce incorrect extractions.
+
 
 confidence ≥ 0.90  → Accepted
 confidence < 0.90  → Manual Review Required
@@ -118,3 +183,10 @@ JPG
 JPEG
 PNG
 TIFF
+=======
+Supported Image Formats:
+JPG
+JPEG
+PNG
+TIFF
+
