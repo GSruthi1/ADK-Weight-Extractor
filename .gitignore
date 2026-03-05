@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.log
+
+# venv
+.venv/
+venv/
+
+# env secrets
+.env
+
+# Mac
+.DS_Store
+
+# VSCode
+.vscode/
+
+# images (optional: keep sample images small)
+# sample_images/
