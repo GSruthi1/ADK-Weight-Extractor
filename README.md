@@ -8,44 +8,71 @@ The system uses:
 - Gemini Vision Model (gemini-2.5-flash)
 - Python
 - Flask API
+- Real-ESRGAN (Image Enhancement GAN)
 
 The agent reads a label image and returns structured JSON output containing the detected **net weight**, **confidence score**, and **status**.
 
 ---
 
-# Architecture Overview
+### Architecture Overview
 
-Image Input (Local Path / Upload)  
-↓  
-Flask API  
-↓  
-ADK Agent  
-↓  
-Gemini Vision Model  
-↓  
-Confidence Guardrail  
-↓  
-JSON Output  
+```
+Image Input (Local Path / Upload)
+        ↓
+Flask API
+        ↓
+ADK Agent
+        ↓
+Gemini Vision Model
+        ↓
+Confidence Guardrail
+        ↓
+Conditional GAN Enhancement (Real-ESRGAN)
+        ↓
+Final Confidence Validation
+        ↓
+JSON Output
+```
 
 ---
 
-# Setup Instructions
+### Image Enhancement Pipeline
 
-## 1. Clone the repository
+To improve label readability for unclear or blurry images, the system integrates **Real-ESRGAN**, a pretrained GAN-based super-resolution model.
+
+Pipeline logic:
+
+1. The original image is processed by the **ADK Agent + Gemini Vision model**
+2. The agent extracts:
+   - `net_weight`
+   - `confidence`
+3. A confidence validation step evaluates the result
+4. If confidence is **above the threshold**, the result is returned
+5. If confidence is **below the threshold**, the image is enhanced using **Real-ESRGAN**
+6. The enhanced image is processed again by the agent
+7. The system compares **original vs enhanced results** and returns the best output
+
+This ensures enhancement runs **only when necessary** and avoids over-processing clear images.
+
+---
+
+### Setup Instructions
+
+#### 1. Clone the repository
 
 ```bash
 git clone https://github.com/GSruthi1/ADK-Weight-Extractor.git
 cd ADK-Weight-Extractor
 ```
 
-## 2. Create virtual environment
+#### 2. Create virtual environment
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 ```
 
-## 3. Install dependencies
+#### 3. Install dependencies
 
 ```bash
 pip install -r requirements.txt
@@ -53,7 +80,7 @@ pip install -r requirements.txt
 
 ---
 
-# Configure Gemini API Key
+### Configure Gemini API Key
 
 Create a `.env` file in the project root:
 
@@ -73,7 +100,7 @@ https://aistudio.google.com/app/apikey
 
 ---
 
-# Run the API
+### Run the API
 
 Start the Flask server:
 
@@ -89,9 +116,9 @@ http://127.0.0.1:5000
 
 ---
 
-# Test the API
+### Test the API
 
-### Test using image path
+#### Test using image path
 
 ```bash
 curl -X POST http://127.0.0.1:5000/extract-weight \
@@ -101,18 +128,38 @@ curl -X POST http://127.0.0.1:5000/extract-weight \
 
 Example response:
 
-```
+```json
 {
-"net_weight": "25.00 lb",
-"confidence": 0.95,
-"reason": "Found NET WT on label",
-"status": "accepted"
+  "original": {
+    "net_weight": "25.00 lb",
+    "confidence": 0.95
+  },
+  "enhanced": null,
+  "status": "accepted"
 }
 ```
 
 ---
 
-### Test using image upload
+#### Example response when enhancement is triggered
+
+```json
+{
+  "original": {
+    "net_weight": "12.00 lb",
+    "confidence": 0.55
+  },
+  "enhanced": {
+    "net_weight": "12.00 lb",
+    "confidence": 0.82
+  },
+  "status": "accepted"
+}
+```
+
+---
+
+#### Test using image upload
 
 ```bash
 curl -X POST http://127.0.0.1:5000/extract-weight \
@@ -121,7 +168,7 @@ curl -X POST http://127.0.0.1:5000/extract-weight \
 
 ---
 
-# Confidence Guardrail
+### Confidence Guardrail
 
 The system validates results using a confidence threshold.
 
@@ -132,18 +179,18 @@ confidence < 0.90 → Manual Review Required
 
 Example response when confidence is low:
 
-```
+```json
 {
-"net_weight": "12.00 lb",
-"confidence": 0.85,
-"status": "rejected",
-"message": "Confidence below 0.90 — manual review required"
+  "net_weight": "12.00 lb",
+  "confidence": 0.70,
+  "status": "rejected",
+  "message": "Confidence below 0.90 — manual review required"
 }
 ```
 
 ---
 
-# Supported Image Formats
+### Supported Image Formats
 
 - JPG
 - JPEG
@@ -151,3 +198,11 @@ Example response when confidence is low:
 - TIFF
 
 ---
+
+### Real-ESRGAN Reference
+
+Real-ESRGAN is a pretrained GAN model used for image super-resolution.
+
+Official repository:
+
+https://github.com/xinntao/Real-ESRGAN
