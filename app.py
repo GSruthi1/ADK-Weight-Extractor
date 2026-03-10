@@ -1,8 +1,10 @@
+from enhance_image import enhance_image
 import asyncio
 import json
 import re
 import mimetypes
 import io
+import os
 from flask import Flask, request, jsonify
 from dotenv import load_dotenv
 from PIL import Image
@@ -95,48 +97,121 @@ def compute_regex_confidence(net_weight: str) -> float:
 @app.route("/extract-weight", methods=["POST"])
 def extract_weight():
     try:
+        # -------- INPUT IMAGE --------
         if request.is_json:
             image_path = request.json.get("image_path")
             if not image_path:
                 return jsonify({"error": "image_path is required"}), 400
+
+            image_path = os.path.abspath(image_path)
+            print("IMAGE PATH:", image_path)
+
             with open(image_path, "rb") as f:
-                image_bytes = f.read()
+                original_bytes = f.read()
 
         else:
             if "file" not in request.files:
                 return jsonify({"error": "Upload file using form-data key 'file'"}), 400
-            image_bytes = request.files["file"].read()
-            image_path = request.files["file"].filename
 
-        agent_text = asyncio.run(run_agent_with_image(image_path, image_bytes))
-        if not agent_text:
-            return jsonify({"error": "No response from agent"}), 500
+            file = request.files["file"]
+            original_bytes = file.read()
+            image_path = file.filename
 
-        parsed = safe_parse_agent_json(agent_text)
-        if not parsed:
-            return jsonify({"error": "Agent returned invalid JSON", "raw": agent_text}), 500
+            with open(image_path, "wb") as f:
+                f.write(original_bytes)
 
-        net_weight = parsed.get("net_weight")
-        model_conf = float(parsed.get("confidence", 0.0))
-        reason = parsed.get("reason", "")
+        # -------- RUN OCR ON ORIGINAL IMAGE --------
+        original_text = asyncio.run(
+            run_agent_with_image(image_path, original_bytes)
+        )
 
-        regex_conf = compute_regex_confidence(net_weight)
-        final_conf = min(model_conf, regex_conf)
+        if not original_text:
+            return jsonify({"error": "No response from agent (original image)"}), 500
 
-        result = {
-            "net_weight": net_weight,
-            "confidence": round(final_conf, 2),
-            "reason": reason,
-        }
+        original_parsed = safe_parse_agent_json(original_text)
 
-        if final_conf < 0.90:
+        if not original_parsed:
             return jsonify({
-                **result,
-                "status": "rejected",
-                "message": "Confidence below 0.90 — manual review required."
-            }), 422
+                "error": "Agent returned invalid JSON (original image)",
+                "raw": original_text
+            }), 500
 
-        return jsonify({**result, "status": "accepted"})
+        original_weight = original_parsed.get("net_weight")
+        original_model_conf = float(original_parsed.get("confidence", 0.0))
+        original_regex_conf = compute_regex_confidence(original_weight)
+        original_final_conf = min(original_model_conf, original_regex_conf)
+
+        # -------- DECIDE IF ESRGAN IS NEEDED --------
+
+        ENHANCE_THRESHOLD = 0.75
+
+        if original_final_conf >= ENHANCE_THRESHOLD:
+
+            response = {
+                "original": {
+                    "net_weight": original_weight,
+                    "confidence": round(original_final_conf, 2)
+                },
+                "enhanced": None,
+                "status": "accepted",
+                "message": "Image clear — enhancement skipped."
+            }
+
+            return jsonify(response)
+
+        # -------- RUN ESRGAN ENHANCEMENT --------
+        base, ext = os.path.splitext(image_path)
+        enhanced_path = f"{base}_enhanced{ext}"
+
+        print("Low confidence detected — running ESRGAN enhancement")
+
+        enhance_image(image_path, enhanced_path)
+
+        with open(enhanced_path, "rb") as f:
+            enhanced_bytes = f.read()
+
+        # -------- RUN ENHANCED IMAGE --------
+        enhanced_text = asyncio.run(
+            run_agent_with_image(enhanced_path, enhanced_bytes)
+        )
+
+        if not enhanced_text:
+            return jsonify({"error": "No response from agent (enhanced image)"}), 500
+
+        enhanced_parsed = safe_parse_agent_json(enhanced_text)
+
+        if not enhanced_parsed:
+            return jsonify({
+                "error": "Agent returned invalid JSON (enhanced image)",
+                "raw": enhanced_text
+            }), 500
+
+        enhanced_weight = enhanced_parsed.get("net_weight")
+        enhanced_model_conf = float(enhanced_parsed.get("confidence", 0.0))
+        enhanced_regex_conf = compute_regex_confidence(enhanced_weight)
+        enhanced_final_conf = min(enhanced_model_conf, enhanced_regex_conf)
+
+        # -------- COMPARISON RESULT --------
+        response = {
+            "original": {
+                "net_weight": original_weight,
+                "confidence": round(original_final_conf, 2)
+            },
+            "enhanced": {
+                "net_weight": enhanced_weight,
+                "confidence": round(enhanced_final_conf, 2)
+            }
+        }
+ 
+        best = max(original_final_conf, enhanced_final_conf)
+
+        if best < 0.90:
+            response["status"] = "rejected"
+            response["message"] = "Confidence below 0.90 — manual review required."
+            return jsonify(response), 422
+
+        response["status"] = "accepted"
+        return jsonify(response)
 
     except FileNotFoundError:
         return jsonify({"error": "File not found"}), 404
@@ -145,4 +220,5 @@ def extract_weight():
 
 
 if __name__ == "__main__":
+    print(app.url_map)
     app.run(port=5000, debug=True, use_reloader=False)
